@@ -28,3 +28,10 @@ doc/source/plugin-registry.rst
 
 # Files created by releasenotes build
 releasenotes/build
+
+# snapcraft artifacts
+snapcraft.yaml
+prime/
+parts/
+stage/
+*.snap
