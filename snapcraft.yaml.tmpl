@@ -13,6 +13,62 @@ apps:
         ]
 
 parts:
+    ceilometer:
+        plugin: python2
+        source: git://git.openstack.org/openstack/ceilometer
+        stage:
+            - $ceilometer-tempest-duplicates
+        filesets:
+            ceilometer-tempest-duplicates:
+                - -usr/lib/python2.7/dist-packages/netifaces.so
+                - -usr/lib/python2.7/dist-packages/msgpack/*.so
+                - -usr/lib/python2.7/dist-packages/wrapt/*.so
+    cinder:
+        plugin: python2
+        source: git://git.openstack.org/openstack/cinder
+        stage:
+            - $cinder-ceilometer-duplicates
+            - $cinder-tempest-duplicates
+        filesets:
+            cinder-ceilometer-duplicates:
+                - -usr/lib/python2.7/dist-packages/_psutil_linux.so
+                - -usr/lib/python2.7/dist-packages/_psutil_posix.so
+                - -usr/lib/python2.7/dist-packages/greenlet.so
+                - -usr/lib/python2.7/dist-packages/lxml/*.so
+                - -usr/lib/python2.7/dist-packages/markupsafe/*.so
+                - -usr/lib/python2.7/dist-packages/simplejson/*.so
+                - -usr/lib/python2.7/dist-packages/sqlalchemy/*.so
+            cinder-tempest-duplicates:
+                - -usr/lib/python2.7/dist-packages/_cffi_backend.so
+                - -usr/lib/python2.7/dist-packages/cryptography/hazmat/bindings/*.so
+                - -usr/lib/python2.7/dist-packages/msgpack/*.so
+                - -usr/lib/python2.7/dist-packages/netifaces.so
+                - -usr/lib/python2.7/dist-packages/wrapt/*.so
+    congress:
+        plugin: python2
+        source: git://git.openstack.org/openstack/congress
+        stage:
+            - $congress-ceilometer-duplicates
+            - $congress-cinder-duplicates
+            - $congress-tempest-duplicates
+        filesets:
+            congress-ceilometer-duplicates:
+                - -usr/lib/python2.7/dist-packages/greenlet.so
+                - -usr/lib/python2.7/dist-packages/lxml/*.so
+                - -usr/lib/python2.7/dist-packages/markupsafe/*.so
+                - -usr/lib/python2.7/dist-packages/simplejson/*.so
+                - -usr/lib/python2.7/dist-packages/sqlalchemy/*.so
+            congress-cinder-duplicates:
+                - -usr/lib/python2.7/dist-packages/site.pyo
+                - -usr/lib/python2.7/dist-packages/suds/*
+                - -usr/lib/python2.7/dist-packages/tests/*
+            congress-tempest-duplicates:
+                - -usr/lib/python2.7/dist-packages/_cffi_backend.so
+                - -usr/lib/python2.7/dist-packages/cryptography/hazmat/bindings/*.so
+                - -usr/lib/python2.7/dist-packages/msgpack/*.so
+                - -usr/lib/python2.7/dist-packages/netifaces.so
+                - -usr/lib/python2.7/dist-packages/pyparsing.py
+                - -usr/lib/python2.7/dist-packages/wrapt/*.so
     tempest:
         plugin: python2
         source: .
