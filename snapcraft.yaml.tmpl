@@ -84,6 +84,25 @@ parts:
                 - -usr/lib/python2.7/dist-packages/msgpack/*.so
                 - -usr/lib/python2.7/dist-packages/netifaces.so
                 - -usr/lib/python2.7/dist-packages/wrapt/*.so
+    freezer-api:
+        plugin: python2
+        source: git://git.openstack.org/openstack/freezer
+        stage:
+            - $freezer-api-ceilometer-duplicates
+            - $freezer-api-freezer-duplicates
+            - $freezer-api-tempest-duplicates
+        filesets:
+            freezer-api-ceilometer-duplicates:
+                - -usr/lib/python2.7/dist-packages/simplejson/_speedups.so
+            freezer-api-freezer-duplicates:
+                - -usr/lib/python2.7/dist-packages/bson/*.so
+                - -usr/lib/python2.7/dist-packages/pymongo/*.so
+            freezer-api-tempest-duplicates:
+                - -usr/lib/python2.7/dist-packages/_cffi_backend.so
+                - -usr/lib/python2.7/dist-packages/cryptography/hazmat/bindings/*.so
+                - -usr/lib/python2.7/dist-packages/msgpack/*.so
+                - -usr/lib/python2.7/dist-packages/netifaces.so
+                - -usr/lib/python2.7/dist-packages/wrapt/*.so
     tempest:
         plugin: python2
         source: .
