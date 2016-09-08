@@ -62,6 +62,10 @@ parts:
                 - -usr/lib/python2.7/dist-packages/site.pyo
                 - -usr/lib/python2.7/dist-packages/suds/*
                 - -usr/lib/python2.7/dist-packages/tests/*
+                - -usr/lib/python2.7/*.pyo
+                - -usr/lib/python2.7/distutils/*.pyo
+                - -usr/lib/python2.7/encodings/*.pyo
+                - -usr/lib/python2.7/plat-x86_64-linux-gnu/*.pyo
             congress-tempest-duplicates:
                 - -usr/lib/python2.7/dist-packages/_cffi_backend.so
                 - -usr/lib/python2.7/dist-packages/cryptography/hazmat/bindings/*.so
@@ -78,6 +82,8 @@ parts:
         filesets:
             freezer-ceilometer-duplicates:
                 - -usr/lib/python2.7/dist-packages/simplejson/*.so
+                - -usr/lib/python2.7/dist-packages/_psutil_linux.so
+                - -usr/lib/python2.7/dist-packages/_psutil_posix.so
             freezer-tempest-duplicates:
                 - -usr/lib/python2.7/dist-packages/_cffi_backend.so
                 - -usr/lib/python2.7/dist-packages/cryptography/hazmat/bindings/*.so
@@ -97,9 +103,26 @@ parts:
             freezer-api-freezer-duplicates:
                 - -usr/lib/python2.7/dist-packages/bson/*.so
                 - -usr/lib/python2.7/dist-packages/pymongo/*.so
+                - -usr/lib/python2.7/dist-packages/_psutil_linux.so
+                - -usr/lib/python2.7/dist-packages/_psutil_posix.so
             freezer-api-tempest-duplicates:
                 - -usr/lib/python2.7/dist-packages/_cffi_backend.so
                 - -usr/lib/python2.7/dist-packages/cryptography/hazmat/bindings/*.so
+                - -usr/lib/python2.7/dist-packages/msgpack/*.so
+                - -usr/lib/python2.7/dist-packages/netifaces.so
+                - -usr/lib/python2.7/dist-packages/wrapt/*.so
+    gnocchi:
+        plugin: python2
+        source: git://git.openstack.org/openstack/gnocchi
+        stage:
+            - $gnocchi-ceilometer-duplicates
+            - $gnocchi-tempest-duplicates
+        filesets:
+            gnocchi-ceilometer-duplicates:
+                - -usr/lib/python2.7/dist-packages/markupsafe/_speedups.so
+                - -usr/lib/python2.7/dist-packages/simplejson/_speedups.so
+                - -usr/lib/python2.7/dist-packages/setproctitle.so
+            gnocchi-tempest-duplicates:
                 - -usr/lib/python2.7/dist-packages/msgpack/*.so
                 - -usr/lib/python2.7/dist-packages/netifaces.so
                 - -usr/lib/python2.7/dist-packages/wrapt/*.so
