@@ -126,6 +126,27 @@ parts:
                 - -usr/lib/python2.7/dist-packages/msgpack/*.so
                 - -usr/lib/python2.7/dist-packages/netifaces.so
                 - -usr/lib/python2.7/dist-packages/wrapt/*.so
+    heat:
+        plugin: python2
+        source: git://git.openstack.org/openstack/heat
+        stage:
+            - $heat-ceilometer-duplicates
+            - $heat-tempest-duplicates
+        filesets:
+            heat-ceilometer-duplicates:
+                - -usr/lib/python2.7/dist-packages/_psutil_linux.so
+                - -usr/lib/python2.7/dist-packages/_psutil_posix.so
+                - -usr/lib/python2.7/dist-packages/greenlet.so
+                - -usr/lib/python2.7/dist-packages/lxml/*.so
+                - -usr/lib/python2.7/dist-packages/markupsafe/*.so
+                - -usr/lib/python2.7/dist-packages/simplejson/*.so
+                - -usr/lib/python2.7/dist-packages/sqlalchemy/*.so
+            heat-tempest-duplicates:
+                - -usr/lib/python2.7/dist-packages/_cffi_backend.so
+                - -usr/lib/python2.7/dist-packages/cryptography/hazmat/bindings/*.so
+                - -usr/lib/python2.7/dist-packages/msgpack/*.so
+                - -usr/lib/python2.7/dist-packages/netifaces.so
+                - -usr/lib/python2.7/dist-packages/wrapt/*.so
     tempest:
         plugin: python2
         source: .
