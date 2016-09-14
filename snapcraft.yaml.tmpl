@@ -147,6 +147,35 @@ parts:
                 - -usr/lib/python2.7/dist-packages/msgpack/*.so
                 - -usr/lib/python2.7/dist-packages/netifaces.so
                 - -usr/lib/python2.7/dist-packages/wrapt/*.so
+    ironic:
+        plugin: python2
+        source: git://git.openstack.org/openstack/ironic
+        stage:
+            - $ironic-ceilometer-duplicates
+            - $ironic-gnocchi-duplicates
+            - $ironic-tempest-duplicates
+        filesets:
+            ironic-ceilometer-duplicates:
+                - -usr/lib/python2.7/dist-packages/_psutil_linux.so
+                - -usr/lib/python2.7/dist-packages/_psutil_posix.so
+                - -usr/lib/python2.7/dist-packages/greenlet.so
+                - -usr/lib/python2.7/dist-packages/markupsafe/*.so
+                - -usr/lib/python2.7/dist-packages/simplejson/*.so
+                - -usr/lib/python2.7/dist-packages/sqlalchemy/*.so
+            ironic-gnocchi-duplicates:
+                - -usr/lib/python2.7/dist-packages/numpy/__config__.py
+                - -usr/lib/python2.7/dist-packages/numpy/core/*.so
+                - -usr/lib/python2.7/dist-packages/numpy/core/lib/libnpymath.a
+                - -usr/lib/python2.7/dist-packages/numpy/distutils/__config__.py
+                - -usr/lib/python2.7/dist-packages/numpy/fft/fftpack_lite.so
+                - -usr/lib/python2.7/dist-packages/numpy/linalg/*.so
+                - -usr/lib/python2.7/dist-packages/numpy/random/mtrand.so
+            ironic-tempest-duplicates:
+                - -usr/lib/python2.7/dist-packages/_cffi_backend.so
+                - -usr/lib/python2.7/dist-packages/cryptography/hazmat/bindings/*.so
+                - -usr/lib/python2.7/dist-packages/msgpack/*.so
+                - -usr/lib/python2.7/dist-packages/netifaces.so
+                - -usr/lib/python2.7/dist-packages/wrapt/*.so
     tempest:
         plugin: python2
         source: .
