@@ -15,7 +15,6 @@
 #    under the License.
 
 
-from math import ceil
 import netaddr
 from oslo_log import log
 from oslo_serialization import jsonutils as json
@@ -218,16 +217,8 @@ class ScenarioTest(tempest.test.BaseTestCase):
             size = CONF.volume.volume_size
         if imageRef:
             image = self.compute_images_client.show_image(imageRef)['image']
-            if 'OS-EXT-IMG-SIZE:size' in image:
-                img_size = ceil(image.get('OS-EXT-IMG-SIZE:size') /
-                                100000000.0)
-            else:
-                img_size = 0
-            if 'minDisk' in image:
-                min_disk = image.get('minDisk')
-            else:
-                min_disk = 0
-            size = max(size, img_size, min_disk)
+            min_disk = image.get('minDisk')
+            size = max(size, min_disk)
         if name is None:
             name = data_utils.rand_name(self.__class__.__name__)
         kwargs = {'display_name': name,
