@@ -17,18 +17,13 @@ import copy
 
 from oslo_log import log as logging
 
-from tempest.common import negative_rest_client
 from tempest import config
-from tempest import exceptions
 from tempest.lib import auth
 from tempest.lib import exceptions as lib_exc
 from tempest.lib.services import clients
-from tempest.services import baremetal
-from tempest.services import data_processing
 from tempest.services import identity
 from tempest.services import object_storage
 from tempest.services import orchestration
-from tempest.services import volume
 
 CONF = config.CONF
 LOG = logging.getLogger(__name__)
@@ -39,8 +34,8 @@ class Manager(clients.ServiceClients):
 
     default_params = config.service_client_config()
 
-    # TODO(andreaf) This is only used by data_processing and baremetal clients,
-    # and should be removed once they are out of Tempest
+    # TODO(jordanP): remove this once no Tempest plugin use that class
+    # variable.
     default_params_with_timeout_values = {
         'build_interval': CONF.compute.build_interval,
         'build_timeout': CONF.compute.build_timeout
@@ -70,12 +65,6 @@ class Manager(clients.ServiceClients):
         self._set_image_clients()
         self._set_network_clients()
 
-        self.baremetal_client = baremetal.BaremetalClient(
-            self.auth_provider,
-            CONF.baremetal.catalog_type,
-            CONF.identity.region,
-            endpoint_type=CONF.baremetal.endpoint_type,
-            **self.default_params_with_timeout_values)
         self.orchestration_client = orchestration.OrchestrationClient(
             self.auth_provider,
             CONF.orchestration.catalog_type,
@@ -84,14 +73,6 @@ class Manager(clients.ServiceClients):
             build_interval=CONF.orchestration.build_interval,
             build_timeout=CONF.orchestration.build_timeout,
             **self.default_params)
-        self.data_processing_client = data_processing.DataProcessingClient(
-            self.auth_provider,
-            CONF.data_processing.catalog_type,
-            CONF.identity.region,
-            endpoint_type=CONF.data_processing.endpoint_type,
-            **self.default_params_with_timeout_values)
-        self.negative_client = negative_rest_client.NegativeRestClient(
-            self.auth_provider, service, **self.default_params)
 
     def _prepare_configuration(self):
         """Map values from CONF into Manager parameters
@@ -139,6 +120,7 @@ class Manager(clients.ServiceClients):
             self.network.SecurityGroupRulesClient())
         self.security_groups_client = self.network.SecurityGroupsClient()
         self.network_versions_client = self.network.NetworkVersionsClient()
+        self.service_providers_client = self.network.ServiceProvidersClient()
 
     def _set_image_clients(self):
         if CONF.service_available.glance:
@@ -149,6 +131,8 @@ class Manager(clients.ServiceClients):
             self.namespaces_client = self.image_v2.NamespacesClient()
             self.resource_types_client = self.image_v2.ResourceTypesClient()
             self.schemas_client = self.image_v2.SchemasClient()
+            self.namespace_properties_client = \
+                self.image_v2.NamespacePropertiesClient()
 
     def _set_compute_clients(self):
         self.agents_client = self.compute.AgentsClient()
@@ -186,7 +170,6 @@ class Manager(clients.ServiceClients):
         self.instance_usages_audit_log_client = (
             self.compute.InstanceUsagesAuditLogClient())
         self.tenant_networks_client = self.compute.TenantNetworksClient()
-        self.baremetal_nodes_client = self.compute.BaremetalNodesClient()
 
         # NOTE: The following client needs special timeout values because
         # the API is a proxy for the other component.
@@ -274,65 +257,49 @@ class Manager(clients.ServiceClients):
                     CONF.identity.uri, **self.default_params)
             else:
                 msg = 'Identity v2 API enabled, but no identity.uri set'
-                raise exceptions.InvalidConfiguration(msg)
+                raise lib_exc.InvalidConfiguration(msg)
         if CONF.identity_feature_enabled.api_v3:
             if CONF.identity.uri_v3:
                 self.token_v3_client = identity.v3.V3TokenClient(
                     CONF.identity.uri_v3, **self.default_params)
             else:
                 msg = 'Identity v3 API enabled, but no identity.uri_v3 set'
-                raise exceptions.InvalidConfiguration(msg)
+                raise lib_exc.InvalidConfiguration(msg)
 
     def _set_volume_clients(self):
-        # Mandatory parameters (always defined)
-        params = self.parameters['volume']
 
-        self.volume_qos_client = volume.v1.QosSpecsClient(self.auth_provider,
-                                                          **params)
-        self.volume_qos_v2_client = volume.v2.QosSpecsClient(
-            self.auth_provider, **params)
-        self.volume_services_client = volume.v1.ServicesClient(
-            self.auth_provider, **params)
-        self.volume_services_v2_client = volume.v2.ServicesClient(
-            self.auth_provider, **params)
-        self.backups_client = volume.v1.BackupsClient(self.auth_provider,
-                                                      **params)
-        self.backups_v2_client = volume.v2.BackupsClient(self.auth_provider,
-                                                         **params)
-        self.encryption_types_client = volume.v1.EncryptionTypesClient(
-            self.auth_provider, **params)
-        self.encryption_types_v2_client = volume.v2.EncryptionTypesClient(
-            self.auth_provider, **params)
-        self.snapshots_client = volume.v1.SnapshotsClient(self.auth_provider,
-                                                          **params)
-        self.snapshots_v2_client = volume.v2.SnapshotsClient(
-            self.auth_provider, **params)
-        self.volumes_client = volume.v1.VolumesClient(self.auth_provider,
-                                                      **params)
-        self.volumes_v2_client = volume.v2.VolumesClient(self.auth_provider,
-                                                         **params)
-        self.volume_messages_client = volume.v3.MessagesClient(
-            self.auth_provider, **params)
-        self.volume_types_client = volume.v1.TypesClient(self.auth_provider,
-                                                         **params)
-        self.volume_types_v2_client = volume.v2.TypesClient(self.auth_provider,
-                                                            **params)
-        self.volume_hosts_client = volume.v1.HostsClient(self.auth_provider,
-                                                         **params)
-        self.volume_hosts_v2_client = volume.v2.HostsClient(self.auth_provider,
-                                                            **params)
-        self.volume_quotas_client = volume.v1.QuotasClient(self.auth_provider,
-                                                           **params)
-        self.volume_quotas_v2_client = volume.v2.QuotasClient(
-            self.auth_provider, **params)
-        self.volumes_extension_client = volume.v1.ExtensionsClient(
-            self.auth_provider, **params)
-        self.volumes_v2_extension_client = volume.v2.ExtensionsClient(
-            self.auth_provider, **params)
+        self.volume_qos_client = self.volume_v1.QosSpecsClient()
+        self.volume_qos_v2_client = self.volume_v2.QosSpecsClient()
+        self.volume_services_client = self.volume_v1.ServicesClient()
+        self.volume_services_v2_client = self.volume_v2.ServicesClient()
+        self.backups_client = self.volume_v1.BackupsClient()
+        self.backups_v2_client = self.volume_v2.BackupsClient()
+        self.encryption_types_client = self.volume_v1.EncryptionTypesClient()
+        self.encryption_types_v2_client = \
+            self.volume_v2.EncryptionTypesClient()
+        self.snapshots_client = self.volume_v1.SnapshotsClient()
+        self.snapshots_v2_client = self.volume_v2.SnapshotsClient()
+        self.volumes_client = self.volume_v1.VolumesClient()
+        self.volumes_v2_client = self.volume_v2.VolumesClient()
+        self.volume_v3_messages_client = self.volume_v3.MessagesClient()
+        self.volume_types_client = self.volume_v1.TypesClient()
+        self.volume_types_v2_client = self.volume_v2.TypesClient()
+        self.volume_hosts_client = self.volume_v1.HostsClient()
+        self.volume_hosts_v2_client = self.volume_v2.HostsClient()
+        self.volume_quotas_client = self.volume_v1.QuotasClient()
+        self.volume_quotas_v2_client = self.volume_v2.QuotasClient()
+        self.volumes_extension_client = self.volume_v1.ExtensionsClient()
+        self.volumes_v2_extension_client = self.volume_v2.ExtensionsClient()
         self.volume_availability_zone_client = \
-            volume.v1.AvailabilityZoneClient(self.auth_provider, **params)
+            self.volume_v1.AvailabilityZoneClient()
         self.volume_v2_availability_zone_client = \
-            volume.v2.AvailabilityZoneClient(self.auth_provider, **params)
+            self.volume_v2.AvailabilityZoneClient()
+        self.volume_limits_client = self.volume_v1.LimitsClient()
+        self.volume_v2_limits_client = self.volume_v2.LimitsClient()
+        self.volume_capabilities_v2_client = \
+            self.volume_v2.CapabilitiesClient()
+        self.volume_scheduler_stats_v2_client = \
+            self.volume_v2.SchedulerStatsClient()
 
     def _set_object_storage_clients(self):
         # Mandatory parameters (always defined)
@@ -340,6 +307,8 @@ class Manager(clients.ServiceClients):
 
         self.account_client = object_storage.AccountClient(self.auth_provider,
                                                            **params)
+        self.capabilities_client = object_storage.CapabilitiesClient(
+            self.auth_provider, **params)
         self.container_client = object_storage.ContainerClient(
             self.auth_provider, **params)
         self.object_client = object_storage.ObjectClient(self.auth_provider,
@@ -357,7 +326,7 @@ def get_auth_provider(credentials, pre_auth=False, scope='project'):
     # kwargs for auth provider match the common ones used by service clients
     default_params = config.service_client_config()
     if credentials is None:
-        raise exceptions.InvalidCredentials(
+        raise lib_exc.InvalidCredentials(
             'Credentials must be specified')
     auth_provider_class, auth_url = get_auth_provider_class(
         credentials)

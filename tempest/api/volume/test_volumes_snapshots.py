@@ -12,7 +12,6 @@
 
 from tempest.api.volume import base
 from tempest.common.utils import data_utils
-from tempest.common import waiters
 from tempest import config
 from tempest import test
 
@@ -34,43 +33,69 @@ class VolumesV2SnapshotTestJSON(base.BaseVolumeTest):
         cls.name_field = cls.special_fields['name_field']
         cls.descrip_field = cls.special_fields['descrip_field']
 
-    def _detach(self, volume_id):
-        """Detach volume."""
-        self.volumes_client.detach_volume(volume_id)
-        waiters.wait_for_volume_status(self.volumes_client,
-                                       volume_id, 'available')
+    def cleanup_snapshot(self, snapshot):
+        # Delete the snapshot
+        self.snapshots_client.delete_snapshot(snapshot['id'])
+        self.snapshots_client.wait_for_resource_deletion(snapshot['id'])
+        self.snapshots.remove(snapshot)
 
     @test.idempotent_id('b467b54c-07a4-446d-a1cf-651dedcc3ff1')
     @test.services('compute')
     def test_snapshot_create_with_volume_in_use(self):
         # Create a snapshot when volume status is in-use
         # Create a test instance
-        server_name = data_utils.rand_name(
-            self.__class__.__name__ + '-instance')
-        server = self.create_server(
-            name=server_name,
-            wait_until='ACTIVE')
-        self.servers_client.attach_volume(
-            server['id'], volumeId=self.volume_origin['id'],
-            device='/dev/%s' % CONF.compute.volume_device_name)
-        waiters.wait_for_volume_status(self.volumes_client,
-                                       self.volume_origin['id'], 'in-use')
-        self.addCleanup(waiters.wait_for_volume_status, self.volumes_client,
-                        self.volume_origin['id'], 'available')
-        self.addCleanup(self.servers_client.detach_volume, server['id'],
-                        self.volume_origin['id'])
+        server = self.create_server(wait_until='ACTIVE')
+        self.attach_volume(server['id'], self.volume_origin['id'])
+
         # Snapshot a volume even if it's attached to an instance
         snapshot = self.create_snapshot(self.volume_origin['id'],
                                         force=True)
         # Delete the snapshot
         self.cleanup_snapshot(snapshot)
 
+    @test.idempotent_id('8567b54c-4455-446d-a1cf-651ddeaa3ff2')
+    @test.services('compute')
+    def test_snapshot_delete_with_volume_in_use(self):
+        # Create a test instance
+        server = self.create_server(wait_until='ACTIVE')
+        self.attach_volume(server['id'], self.volume_origin['id'])
+
+        # Snapshot a volume attached to an instance
+        snapshot1 = self.create_snapshot(self.volume_origin['id'], force=True)
+        snapshot2 = self.create_snapshot(self.volume_origin['id'], force=True)
+        snapshot3 = self.create_snapshot(self.volume_origin['id'], force=True)
+
+        # Delete the snapshots. Some snapshot implementations can take
+        # different paths according to order they are deleted.
+        self.cleanup_snapshot(snapshot1)
+        self.cleanup_snapshot(snapshot3)
+        self.cleanup_snapshot(snapshot2)
+
+    @test.idempotent_id('5210a1de-85a0-11e6-bb21-641c676a5d61')
+    @test.services('compute')
+    def test_snapshot_create_offline_delete_online(self):
+
+        # Create a snapshot while it is not attached
+        snapshot1 = self.create_snapshot(self.volume_origin['id'])
+
+        # Create a server and attach it
+        server = self.create_server(wait_until='ACTIVE')
+        self.attach_volume(server['id'], self.volume_origin['id'])
+
+        # Now that the volume is attached, create another snapshots
+        snapshot2 = self.create_snapshot(self.volume_origin['id'], force=True)
+        snapshot3 = self.create_snapshot(self.volume_origin['id'], force=True)
+
+        # Delete the snapshots. Some snapshot implementations can take
+        # different paths according to order they are deleted.
+        self.cleanup_snapshot(snapshot3)
+        self.cleanup_snapshot(snapshot1)
+        self.cleanup_snapshot(snapshot2)
+
     @test.idempotent_id('2a8abbe4-d871-46db-b049-c41f5af8216e')
     def test_snapshot_create_get_list_update_delete(self):
         # Create a snapshot
-        s_name = data_utils.rand_name(self.__class__.__name__ + '-snap')
-        params = {self.name_field: s_name}
-        snapshot = self.create_snapshot(self.volume_origin['id'], **params)
+        snapshot = self.create_snapshot(self.volume_origin['id'])
 
         # Get the snap and check for some of its details
         snap_get = self.snapshots_client.show_snapshot(
@@ -115,17 +140,19 @@ class VolumesV2SnapshotTestJSON(base.BaseVolumeTest):
         # Destination volume bigger than source snapshot
         dst_vol = self.create_volume(snapshot_id=src_snap['id'],
                                      size=src_size + 1)
+        # NOTE(zhufl): dst_vol is created based on snapshot, so dst_vol
+        # should be deleted before deleting snapshot, otherwise deleting
+        # snapshot will end with status 'error-deleting'. This depends on
+        # the implementation mechanism of vendors, generally speaking,
+        # some verdors will use "virtual disk clone" which will promote
+        # disk clone speed, and in this situation the "disk clone"
+        # is just a relationship between volume and snapshot.
+        self.addCleanup(self.delete_volume, self.volumes_client, dst_vol['id'])
 
         volume = self.volumes_client.show_volume(dst_vol['id'])['volume']
         # Should allow
         self.assertEqual(volume['snapshot_id'], src_snap['id'])
         self.assertEqual(int(volume['size']), src_size + 1)
-
-    def cleanup_snapshot(self, snapshot):
-        # Delete the snapshot
-        self.snapshots_client.delete_snapshot(snapshot['id'])
-        self.snapshots_client.wait_for_resource_deletion(snapshot['id'])
-        self.snapshots.remove(snapshot)
 
 
 class VolumesV1SnapshotTestJSON(VolumesV2SnapshotTestJSON):

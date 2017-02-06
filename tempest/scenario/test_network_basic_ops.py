@@ -19,12 +19,11 @@ import re
 from oslo_log import log as logging
 import testtools
 
-from tempest.common.utils import data_utils
 from tempest.common import waiters
 from tempest import config
-from tempest import exceptions
 from tempest.lib.common.utils import test_utils
 from tempest.lib import decorators
+from tempest.lib import exceptions
 from tempest.scenario import manager
 from tempest import test
 
@@ -105,8 +104,7 @@ class TestNetworkBasicOps(manager.NetworkScenarioTest):
 
     def _setup_network_and_servers(self, **kwargs):
         boot_with_port = kwargs.pop('boot_with_port', False)
-        self.security_group = \
-            self._create_security_group(tenant_id=self.tenant_id)
+        self.security_group = self._create_security_group()
         self.network, self.subnet, self.router = self.create_networks(**kwargs)
         self.check_networks()
 
@@ -117,8 +115,7 @@ class TestNetworkBasicOps(manager.NetworkScenarioTest):
             self.port_id = self._create_port(self.network['id'])['id']
             self.ports.append({'port': self.port_id})
 
-        name = data_utils.rand_name('server-smoke')
-        server = self._create_server(name, self.network, self.port_id)
+        server = self._create_server(self.network, self.port_id)
         self._check_tenant_network_connectivity()
 
         floating_ip = self.create_floating_ip(server)
@@ -152,7 +149,7 @@ class TestNetworkBasicOps(manager.NetworkScenarioTest):
             self.assertIn(self.router['id'],
                           seen_router_ids)
 
-    def _create_server(self, name, network, port_id=None):
+    def _create_server(self, network, port_id=None):
         keypair = self.create_keypair()
         self.keypairs[keypair['name']] = keypair
         security_groups = [{'name': self.security_group['name']}]
@@ -161,7 +158,6 @@ class TestNetworkBasicOps(manager.NetworkScenarioTest):
             network['port'] = port_id
 
         server = self.create_server(
-            name=name,
             networks=[network],
             key_name=keypair['name'],
             security_groups=security_groups,
@@ -183,7 +179,7 @@ class TestNetworkBasicOps(manager.NetworkScenarioTest):
 
     def check_public_network_connectivity(
             self, should_connect=True, msg=None,
-            should_check_floating_ip_status=True):
+            should_check_floating_ip_status=True, mtu=None):
         """Verifies connectivty to a VM via public network and floating IP
 
         and verifies floating IP has resource status is correct.
@@ -195,6 +191,7 @@ class TestNetworkBasicOps(manager.NetworkScenarioTest):
         to indicate the context of the failure
         :param should_check_floating_ip_status: bool. should status of
         floating_ip be checked or not
+        :param mtu: int. MTU network to use for connectivity validation
         """
         ssh_login = CONF.validation.image_ssh_user
         floating_ip, server = self.floating_ip_tuple
@@ -210,7 +207,7 @@ class TestNetworkBasicOps(manager.NetworkScenarioTest):
         # call the common method in the parent class
         super(TestNetworkBasicOps, self).check_public_network_connectivity(
             ip_address, ssh_login, private_key, should_connect, msg,
-            self.servers)
+            self.servers, mtu=mtu)
 
     def _disassociate_floating_ips(self):
         floating_ip, server = self.floating_ip_tuple
@@ -220,15 +217,14 @@ class TestNetworkBasicOps(manager.NetworkScenarioTest):
 
     def _reassociate_floating_ips(self):
         floating_ip, server = self.floating_ip_tuple
-        name = data_utils.rand_name('new_server-smoke')
         # create a new server for the floating ip
-        server = self._create_server(name, self.network)
+        server = self._create_server(self.network)
         self._associate_floating_ip(floating_ip, server)
         self.floating_ip_tuple = Floating_IP_tuple(
             floating_ip, server)
 
     def _create_new_network(self, create_gateway=False):
-        self.new_net = self._create_network(tenant_id=self.tenant_id)
+        self.new_net = self._create_network()
         if create_gateway:
             self.new_subnet = self._create_subnet(
                 network=self.new_net)
@@ -410,9 +406,20 @@ class TestNetworkBasicOps(manager.NetworkScenarioTest):
                                                msg="after re-associate "
                                                    "floating ip")
 
+    @test.idempotent_id('b158ea55-472e-4086-8fa9-c64ac0c6c1d0')
+    @testtools.skipUnless(test.is_extension_enabled('net-mtu', 'network'),
+                          'No way to calculate MTU for networks')
+    @test.services('compute', 'network')
+    def test_mtu_sized_frames(self):
+        """Validate that network MTU sized frames fit through."""
+        self._setup_network_and_servers()
+        self.check_public_network_connectivity(
+            should_connect=True, mtu=self.network['mtu'])
+
     @test.idempotent_id('1546850e-fbaa-42f5-8b5f-03d8a6a95f15')
-    @testtools.skipIf(CONF.baremetal.driver_enabled,
-                      'Baremetal relies on a shared physical network.')
+    @testtools.skipIf(CONF.network.shared_physical_network,
+                      'Connectivity can only be tested when in a '
+                      'multitenant network environment')
     @decorators.skip_because(bug="1610994")
     @test.services('compute', 'network')
     def test_connectivity_between_vms_on_different_networks(self):
@@ -449,8 +456,7 @@ class TestNetworkBasicOps(manager.NetworkScenarioTest):
         self._check_network_internal_connectivity(network=self.network)
         self._check_network_external_connectivity()
         self._create_new_network(create_gateway=True)
-        name = data_utils.rand_name('server-smoke')
-        self._create_server(name, self.new_net)
+        self._create_server(self.new_net)
         self._check_network_internal_connectivity(network=self.new_net,
                                                   should_connect=False)
         router_id = self.router['id']
@@ -487,9 +493,9 @@ class TestNetworkBasicOps(manager.NetworkScenarioTest):
         self._check_network_internal_connectivity(network=self.new_net)
 
     @test.idempotent_id('04b9fe4e-85e8-4aea-b937-ea93885ac59f')
-    @testtools.skipIf(CONF.baremetal.driver_enabled,
-                      'Router state cannot be altered on a shared baremetal '
-                      'network')
+    @testtools.skipIf(CONF.network.shared_physical_network,
+                      'Router state can be altered only with multitenant '
+                      'networks capabilities')
     @test.services('compute', 'network')
     def test_update_router_admin_state(self):
         """Test to update admin state up of router
@@ -519,8 +525,8 @@ class TestNetworkBasicOps(manager.NetworkScenarioTest):
             "admin_state_up of router to True")
 
     @test.idempotent_id('d8bb918e-e2df-48b2-97cd-b73c95450980')
-    @testtools.skipIf(CONF.baremetal.driver_enabled,
-                      'network isolation not available for baremetal nodes')
+    @testtools.skipIf(CONF.network.shared_physical_network,
+                      'network isolation not available')
     @testtools.skipUnless(CONF.scenario.dhcp_client,
                           "DHCP client is not available.")
     @test.services('compute', 'network')
@@ -602,9 +608,6 @@ class TestNetworkBasicOps(manager.NetworkScenarioTest):
                             "new DNS nameservers")
 
     @test.idempotent_id('f5dfcc22-45fd-409f-954c-5bd500d7890b')
-    @testtools.skipIf(CONF.baremetal.driver_enabled,
-                      'admin_state of instance ports cannot be altered '
-                      'for baremetal nodes')
     @testtools.skipUnless(CONF.network_feature_enabled.port_admin_state_change,
                           "Changing a port's admin state is not supported "
                           "by the test environment")
@@ -678,8 +681,7 @@ class TestNetworkBasicOps(manager.NetworkScenarioTest):
 
         # Boot another server with the same port to make sure nothing was
         # left around that could cause issues.
-        name = data_utils.rand_name('reuse-port')
-        server = self._create_server(name, self.network, port['id'])
+        server = self._create_server(self.network, port['id'])
         port_list = self._list_ports(device_id=server['id'],
                                      network_id=self.network['id'])
         self.assertEqual(1, len(port_list),
@@ -744,7 +746,6 @@ class TestNetworkBasicOps(manager.NetworkScenarioTest):
         self.check_public_network_connectivity(
             should_connect=False,
             msg='after router unscheduling',
-            should_check_floating_ip_status=False
         )
 
         # schedule resource to new agent
@@ -803,8 +804,7 @@ class TestNetworkBasicOps(manager.NetworkScenarioTest):
         ssh_client = self.get_remote_client(fip['floating_ip_address'],
                                             private_key=private_key)
         spoof_nic = ssh_client.get_nic_name_by_mac(spoof_port["mac_address"])
-        name = data_utils.rand_name('peer')
-        peer = self._create_server(name, self.new_net)
+        peer = self._create_server(self.new_net)
         peer_address = peer['addresses'][self.new_net['name']][0]['addr']
         self._check_remote_connectivity(ssh_client, dest=peer_address,
                                         nic=spoof_nic, should_succeed=True)

@@ -13,6 +13,8 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+import time
+
 from tempest.common import custom_matchers
 from tempest import config
 from tempest.lib.common.utils import data_utils
@@ -48,6 +50,7 @@ class BaseObjectTest(tempest.test.BaseTestCase):
         cls.object_client = cls.os.object_client
         cls.container_client = cls.os.container_client
         cls.account_client = cls.os.account_client
+        cls.capabilities_client = cls.os.capabilities_client
 
     @classmethod
     def resource_setup(cls):
@@ -63,7 +66,7 @@ class BaseObjectTest(tempest.test.BaseTestCase):
         cls.policies = None
 
         if CONF.object_storage_feature_enabled.discoverability:
-            _, body = cls.account_client.list_extensions()
+            _, body = cls.capabilities_client.list_capabilities()
 
             if 'swift' in body and 'policies' in body['swift']:
                 cls.policies = body['swift']['policies']
@@ -102,6 +105,10 @@ class BaseObjectTest(tempest.test.BaseTestCase):
         The containers should be visible from the container_client given.
         Will not throw any error if the containers don't exist.
         Will not check that object and container deletions succeed.
+        After delete all the objects from a container, it will wait 2
+        seconds before delete the container itself, in order to deployments
+        using HA proxy sync the deletion properly, otherwise, the container
+        might fail to be deleted because it's not empty.
 
         :param container_client: if None, use cls.container_client, this means
             that the default testing user will be used (see 'username' in
@@ -114,11 +121,16 @@ class BaseObjectTest(tempest.test.BaseTestCase):
             object_client = cls.object_client
         for cont in cls.containers:
             try:
-                objlist = container_client.list_all_container_objects(cont)
+                params = {'limit': 9999, 'format': 'json'}
+                resp, objlist = container_client.list_container_contents(
+                    cont, params)
                 # delete every object in the container
                 for obj in objlist:
                     test_utils.call_and_ignore_notfound_exc(
                         object_client.delete_object, cont, obj['name'])
+                # sleep 2 seconds to sync the deletion of the objects
+                # in HA deployment
+                time.sleep(2)
                 container_client.delete_container(cont)
             except lib_exc.NotFound:
                 pass

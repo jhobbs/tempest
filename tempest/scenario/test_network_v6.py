@@ -18,7 +18,6 @@ import six
 
 from tempest import config
 from tempest.lib.common.utils import test_utils
-from tempest.lib import decorators
 from tempest.scenario import manager
 from tempest import test
 
@@ -51,8 +50,8 @@ class TestGettingAddress(manager.NetworkScenarioTest):
             msg = ('Either project_networks_reachable must be "true", or '
                    'public_network_id must be defined.')
             raise cls.skipException(msg)
-        if CONF.baremetal.driver_enabled:
-            msg = ('Baremetal does not currently support network isolation')
+        if CONF.network.shared_physical_network:
+            msg = 'Deployment uses a shared physical network'
             raise cls.skipException(msg)
 
     @classmethod
@@ -64,7 +63,7 @@ class TestGettingAddress(manager.NetworkScenarioTest):
     def setUp(self):
         super(TestGettingAddress, self).setUp()
         self.keypair = self.create_keypair()
-        self.sec_grp = self._create_security_group(tenant_id=self.tenant_id)
+        self.sec_grp = self._create_security_group()
 
     def prepare_network(self, address6_mode, n_subnets6=1, dualnet=False):
         """Prepare network
@@ -75,15 +74,15 @@ class TestGettingAddress(manager.NetworkScenarioTest):
         if dualnet - create IPv6 subnets on a different network
         :return: list of created networks
         """
-        self.network = self._create_network(tenant_id=self.tenant_id)
+        self.network = self._create_network()
         if dualnet:
-            self.network_v6 = self._create_network(tenant_id=self.tenant_id)
+            self.network_v6 = self._create_network()
 
         sub4 = self._create_subnet(network=self.network,
                                    namestart='sub4',
                                    ip_version=4)
 
-        router = self._get_router(tenant_id=self.tenant_id)
+        router = self._get_router()
         self.routers_client.add_router_interface(router['id'],
                                                  subnet_id=sub4['id'])
 
@@ -255,7 +254,6 @@ class TestGettingAddress(manager.NetworkScenarioTest):
         self._prepare_and_test(address6_mode='dhcpv6-stateless', n_subnets6=2,
                                dualnet=True)
 
-    @decorators.skip_because(bug="1540983")
     @test.idempotent_id('9178ad42-10e4-47e9-8987-e02b170cc5cd')
     @test.services('compute', 'network')
     def test_dualnet_multi_prefix_slaac(self):

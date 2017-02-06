@@ -17,16 +17,8 @@
 from tempest.lib import exceptions
 
 
-class InvalidConfiguration(exceptions.TempestException):
-    message = "Invalid Configuration"
-
-
 class InvalidServiceTag(exceptions.TempestException):
     message = "Invalid service tag"
-
-
-class TimeoutException(exceptions.TempestException):
-    message = "Request timed out"
 
 
 class BuildErrorException(exceptions.TempestException):

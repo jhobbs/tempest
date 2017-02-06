@@ -43,10 +43,7 @@ class VolumeTypesV2Test(base.BaseVolumeAdminTest):
                        "vendor_name": vendor}
         # Create two volume_types
         for i in range(2):
-            vol_type_name = data_utils.rand_name(
-                self.__class__.__name__ + '-volume-type')
             vol_type = self.create_volume_type(
-                name=vol_type_name,
                 extra_specs=extra_specs)
             volume_types.append(vol_type)
         params = {self.name_field: vol_name,
@@ -54,8 +51,7 @@ class VolumeTypesV2Test(base.BaseVolumeAdminTest):
                   'size': CONF.volume.volume_size}
 
         # Create volume
-        volume = self.volumes_client.create_volume(**params)['volume']
-        self.addCleanup(self.delete_volume, self.volumes_client, volume['id'])
+        volume = self.create_volume(**params)
         self.assertEqual(volume_types[0]['name'], volume["volume_type"])
         self.assertEqual(volume[self.name_field], vol_name,
                          "The created volume name is not equal "
@@ -105,8 +101,8 @@ class VolumeTypesV2Test(base.BaseVolumeAdminTest):
         self.assertEqual(description, body['description'],
                          "The created volume_type_description name is "
                          "not equal to the requested name")
-        self.assertTrue(body['id'] is not None,
-                        "Field volume_type id is empty or not found.")
+        self.assertIsNotNone(body['id'],
+                             "Field volume_type id is empty or not found.")
         fetched_volume_type = self.admin_volume_types_client.show_volume_type(
             body['id'])['volume_type']
         self.assertEqual(name, fetched_volume_type['name'],
@@ -124,8 +120,7 @@ class VolumeTypesV2Test(base.BaseVolumeAdminTest):
         # Create/get/delete encryption type.
         provider = "LuksEncryptor"
         control_location = "front-end"
-        name = data_utils.rand_name(self.__class__.__name__ + '-volume-type')
-        body = self.create_volume_type(name=name)
+        body = self.create_volume_type()
         # Create encryption type
         encryption_type = \
             self.admin_encryption_types_client.create_encryption_type(

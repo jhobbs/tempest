@@ -15,7 +15,6 @@
 
 import testtools
 
-from tempest.common.utils import data_utils
 from tempest.common import waiters
 from tempest import config
 from tempest.scenario import manager
@@ -34,6 +33,12 @@ class TestNetworkAdvancedServerOps(manager.NetworkScenarioTest):
      * Suspend/Resume an instance
      * Resize an instance
     """
+
+    @classmethod
+    def setup_clients(cls):
+        super(TestNetworkAdvancedServerOps, cls).setup_clients()
+        cls.admin_servers_client = cls.os_adm.servers_client
+        cls.admin_hosts_client = cls.os_adm.hosts_client
 
     @classmethod
     def skip_checks(cls):
@@ -56,9 +61,7 @@ class TestNetworkAdvancedServerOps(manager.NetworkScenarioTest):
             security_group = self._create_security_group()
             security_groups = [{'name': security_group['name']}]
         network, subnet, router = self.create_networks()
-        server_name = data_utils.rand_name(self.__class__.__name__ + '-server')
         server = self.create_server(
-            name=server_name,
             networks=[{'uuid': network['id']}],
             key_name=keypair['name'],
             security_groups=security_groups,
@@ -97,8 +100,11 @@ class TestNetworkAdvancedServerOps(manager.NetworkScenarioTest):
                                        'ACTIVE')
         self._check_network_connectivity(server, keypair, floating_ip)
 
+    def _get_host_for_server(self, server_id):
+        body = self.admin_servers_client.show_server(server_id)['server']
+        return body['OS-EXT-SRV-ATTR:host']
+
     @test.idempotent_id('61f1aa9a-1573-410e-9054-afa557cab021')
-    @test.stresstest(class_setup_per='process')
     @test.services('compute', 'network')
     def test_server_connectivity_stop_start(self):
         keypair = self.create_keypair()
@@ -188,3 +194,29 @@ class TestNetworkAdvancedServerOps(manager.NetworkScenarioTest):
         self.servers_client.confirm_resize_server(server['id'])
         self._wait_server_status_and_check_network_connectivity(
             server, keypair, floating_ip)
+
+    @test.idempotent_id('a4858f6c-401e-4155-9a49-d5cd053d1a2f')
+    @testtools.skipUnless(CONF.compute_feature_enabled.cold_migration,
+                          'Cold migration is not available.')
+    @test.services('compute', 'network')
+    def test_server_connectivity_cold_migration(self):
+        if CONF.compute.min_compute_nodes < 2:
+            msg = "Less than 2 compute nodes, skipping multinode tests."
+            raise self.skipException(msg)
+
+        keypair = self.create_keypair()
+        server = self._setup_server(keypair)
+        floating_ip = self._setup_network(server, keypair)
+        src_host = self._get_host_for_server(server['id'])
+        self._wait_server_status_and_check_network_connectivity(
+            server, keypair, floating_ip)
+
+        self.admin_servers_client.migrate_server(server['id'])
+        waiters.wait_for_server_status(self.servers_client, server['id'],
+                                       'VERIFY_RESIZE')
+        self.servers_client.confirm_resize_server(server['id'])
+        self._wait_server_status_and_check_network_connectivity(
+            server, keypair, floating_ip)
+        dst_host = self._get_host_for_server(server['id'])
+
+        self.assertNotEqual(src_host, dst_host)

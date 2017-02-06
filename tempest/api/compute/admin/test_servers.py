@@ -29,7 +29,6 @@ class ServersAdminTestJSON(base.BaseV2ComputeAdminTest):
         super(ServersAdminTestJSON, cls).setup_clients()
         cls.client = cls.os_adm.servers_client
         cls.non_admin_client = cls.servers_client
-        cls.flavors_client = cls.os_adm.flavors_client
 
     @classmethod
     def resource_setup(cls):
@@ -105,6 +104,14 @@ class ServersAdminTestJSON(base.BaseV2ComputeAdminTest):
         servers_name = map(lambda x: x['name'], servers)
         self.assertNotIn(self.s1_name, servers_name)
         self.assertNotIn(self.s2_name, servers_name)
+
+        # List the primary tenant with all_tenants is specified
+        params = {'all_tenants': '', 'tenant_id': tenant_id}
+        body = self.client.list_servers(detail=True, **params)
+        servers = body['servers']
+        servers_name = map(lambda x: x['name'], servers)
+        self.assertIn(self.s1_name, servers_name)
+        self.assertIn(self.s2_name, servers_name)
 
         # List the admin tenant shouldn't get servers created by other tenants
         admin_tenant_id = self.client.tenant_id

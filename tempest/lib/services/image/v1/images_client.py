@@ -34,8 +34,7 @@ class ImagesClient(rest_client.RestClient):
         data = iter(functools.partial(data.read, CHUNKSIZE), b'')
         resp, body = self.request('POST', 'images',
                                   headers=headers, body=data, chunked=True)
-        self._error_checker('POST', 'images', headers, data, resp,
-                            body)
+        self._error_checker(resp, body)
         body = json.loads(body)
         return rest_client.ResponseBody(resp, body)
 
@@ -47,8 +46,7 @@ class ImagesClient(rest_client.RestClient):
         url = 'images/%s' % image_id
         resp, body = self.request('PUT', url, headers=headers,
                                   body=data, chunked=True)
-        self._error_checker('PUT', url, headers, data,
-                            resp, body)
+        self._error_checker(resp, body)
         body = json.loads(body)
         return rest_client.ResponseBody(resp, body)
 
@@ -117,7 +115,7 @@ class ImagesClient(rest_client.RestClient):
         if detail:
             url += '/detail'
 
-        if kwargs.get('changes_since'):
+        if 'changes_since' in kwargs:
             kwargs['changes-since'] = kwargs.pop('changes_since')
 
         if len(kwargs) > 0:

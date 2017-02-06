@@ -13,25 +13,24 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+import logging
 import testtools
 
 from tempest.api.compute import base
 from tempest.common import compute
-from tempest.common.utils import data_utils
 from tempest.common.utils.linux import remote_client
 from tempest.common import waiters
 from tempest import config
+from tempest.lib import exceptions as lib_exc
 from tempest import test
 
 CONF = config.CONF
 
+LOG = logging.getLogger(__name__)
+
 
 class AttachVolumeTestJSON(base.BaseV2ComputeTest):
     max_microversion = '2.19'
-
-    def __init__(self, *args, **kwargs):
-        super(AttachVolumeTestJSON, self).__init__(*args, **kwargs)
-        self.attachment = None
 
     @classmethod
     def skip_checks(cls):
@@ -48,15 +47,8 @@ class AttachVolumeTestJSON(base.BaseV2ComputeTest):
     @classmethod
     def resource_setup(cls):
         cls.set_validation_resources()
-
         super(AttachVolumeTestJSON, cls).resource_setup()
         cls.device = CONF.compute.volume_device_name
-
-    def _detach(self, server_id, volume_id):
-        if self.attachment:
-            self.servers_client.detach_volume(server_id, volume_id)
-            waiters.wait_for_volume_status(self.volumes_client,
-                                           volume_id, 'available')
 
     def _create_server(self):
         # Start a server and wait for it to become ready
@@ -64,38 +56,43 @@ class AttachVolumeTestJSON(base.BaseV2ComputeTest):
             validatable=True,
             wait_until='ACTIVE',
             adminPass=self.image_ssh_password)
-
         # Record addresses so that we can ssh later
         server['addresses'] = self.servers_client.list_addresses(
             server['id'])['addresses']
         return server
 
-    def _create_and_attach_volume(self, server):
-        # Create a volume and wait for it to become ready
-        vol_name = data_utils.rand_name(self.__class__.__name__ + '-volume')
-        volume = self.volumes_client.create_volume(
-            size=CONF.volume.volume_size, display_name=vol_name)['volume']
-        self.addCleanup(self.delete_volume, volume['id'])
-        waiters.wait_for_volume_status(self.volumes_client,
-                                       volume['id'], 'available')
+    def _detach_volume(self, server_id, volume_id):
+        try:
+            self.servers_client.detach_volume(server_id, volume_id)
+            waiters.wait_for_volume_status(self.volumes_client,
+                                           volume_id, 'available')
+        except lib_exc.NotFound:
+            LOG.warning("Unable to detach volume %s from server %s "
+                        "possibly it was already detached" % (volume_id,
+                                                              server_id))
 
+    def _attach_volume(self, server_id, volume_id, device=None):
         # Attach the volume to the server
-        self.attachment = self.servers_client.attach_volume(
-            server['id'],
-            volumeId=volume['id'],
-            device='/dev/%s' % self.device)['volumeAttachment']
+        kwargs = {'volumeId': volume_id}
+        if device:
+            kwargs.update({'device': '/dev/%s' % device})
+        attachment = self.servers_client.attach_volume(
+            server_id, **kwargs)['volumeAttachment']
         waiters.wait_for_volume_status(self.volumes_client,
-                                       volume['id'], 'in-use')
+                                       volume_id, 'in-use')
+        self.addCleanup(self._detach_volume, server_id,
+                        volume_id)
 
-        self.addCleanup(self._detach, server['id'], volume['id'])
-        return volume
+        return attachment
 
     @test.idempotent_id('52e9045a-e90d-4c0d-9087-79d657faffff')
     def test_attach_detach_volume(self):
         # Stop and Start a server with an attached volume, ensuring that
         # the volume remains attached.
         server = self._create_server()
-        volume = self._create_and_attach_volume(server)
+        volume = self.create_volume()
+        attachment = self._attach_volume(server['id'], volume['id'],
+                                         device=self.device)
 
         self.servers_client.stop_server(server['id'])
         waiters.wait_for_server_status(self.servers_client, server['id'],
@@ -114,12 +111,11 @@ class AttachVolumeTestJSON(base.BaseV2ComputeTest):
                 server=server,
                 servers_client=self.servers_client)
 
-            partitions = linux_client.get_partitions()
-            device_name_to_match = ' ' + self.device + '\n'
-            self.assertIn(device_name_to_match, partitions)
+            disks = linux_client.get_disks()
+            device_name_to_match = '\n' + self.device + ' '
+            self.assertIn(device_name_to_match, disks)
 
-        self._detach(server['id'], volume['id'])
-        self.attachment = None
+        self._detach_volume(server['id'], attachment['volumeId'])
         self.servers_client.stop_server(server['id'])
         waiters.wait_for_server_status(self.servers_client, server['id'],
                                        'SHUTOFF')
@@ -137,28 +133,58 @@ class AttachVolumeTestJSON(base.BaseV2ComputeTest):
                 server=server,
                 servers_client=self.servers_client)
 
-            partitions = linux_client.get_partitions()
-            self.assertNotIn(device_name_to_match, partitions)
+            disks = linux_client.get_disks()
+            self.assertNotIn(device_name_to_match, disks)
 
     @test.idempotent_id('7fa563fe-f0f7-43eb-9e22-a1ece036b513')
     def test_list_get_volume_attachments(self):
-        # Create Server, Volume and attach that Volume to Server
+        # List volume attachment of the server
         server = self._create_server()
-        volume = self._create_and_attach_volume(server)
-
-        # List Volume attachment of the server
+        volume = self.create_volume()
+        attachment = self._attach_volume(server['id'], volume['id'],
+                                         device=self.device)
         body = self.servers_client.list_volume_attachments(
             server['id'])['volumeAttachments']
         self.assertEqual(1, len(body))
-        self.assertIn(self.attachment, body)
+        self.assertIn(attachment, body)
 
-        # Get Volume attachment of the server
+        # Get volume attachment of the server
         body = self.servers_client.show_volume_attachment(
             server['id'],
-            self.attachment['id'])['volumeAttachment']
+            attachment['id'])['volumeAttachment']
         self.assertEqual(server['id'], body['serverId'])
         self.assertEqual(volume['id'], body['volumeId'])
-        self.assertEqual(self.attachment['id'], body['id'])
+        self.assertEqual(attachment['id'], body['id'])
+
+    @test.idempotent_id('757d488b-a951-4bc7-b3cd-f417028da08a')
+    def test_list_get_two_volume_attachments(self):
+        # NOTE: This test is using the volume device auto-assignment
+        # without specifying the device ("/dev/sdb", etc). The feature
+        # is supported since Nova Liberty release or later. So this should
+        # be skipped on older clouds.
+        server = self._create_server()
+        volume_1st = self.create_volume()
+        volume_2nd = self.create_volume()
+        attachment_1st = self._attach_volume(server['id'], volume_1st['id'])
+        attachment_2nd = self._attach_volume(server['id'], volume_2nd['id'])
+
+        body = self.servers_client.list_volume_attachments(
+            server['id'])['volumeAttachments']
+        self.assertEqual(2, len(body))
+
+        body = self.servers_client.show_volume_attachment(
+            server['id'],
+            attachment_1st['id'])['volumeAttachment']
+        self.assertEqual(server['id'], body['serverId'])
+        self.assertEqual(attachment_1st['volumeId'], body['volumeId'])
+        self.assertEqual(attachment_1st['id'], body['id'])
+
+        body = self.servers_client.show_volume_attachment(
+            server['id'],
+            attachment_2nd['id'])['volumeAttachment']
+        self.assertEqual(server['id'], body['serverId'])
+        self.assertEqual(attachment_2nd['volumeId'], body['volumeId'])
+        self.assertEqual(attachment_2nd['id'], body['id'])
 
 
 class AttachVolumeShelveTestJSON(AttachVolumeTestJSON):
@@ -224,19 +250,21 @@ class AttachVolumeShelveTestJSON(AttachVolumeTestJSON):
         # Create server, count number of volumes on it, shelve
         # server and attach pre-created volume to shelved server
         server = self._create_server()
+        volume = self.create_volume()
         num_vol = self._count_volumes(server)
         self._shelve_server(server)
-        self._create_and_attach_volume(server)
+        attachment = self._attach_volume(server['id'], volume['id'],
+                                         device=self.device)
 
         # Unshelve the instance and check that attached volume exists
         self._unshelve_server_and_check_volumes(server, num_vol + 1)
 
-        # Get Volume attachment of the server
+        # Get volume attachment of the server
         volume_attachment = self.servers_client.show_volume_attachment(
             server['id'],
-            self.attachment['id'])['volumeAttachment']
+            attachment['id'])['volumeAttachment']
         self.assertEqual(server['id'], volume_attachment['serverId'])
-        self.assertEqual(self.attachment['id'], volume_attachment['id'])
+        self.assertEqual(attachment['id'], volume_attachment['id'])
         # Check the mountpoint is not None after unshelve server even in
         # case of shelved_offloaded.
         self.assertIsNotNone(volume_attachment['device'])
@@ -245,16 +273,15 @@ class AttachVolumeShelveTestJSON(AttachVolumeTestJSON):
     @testtools.skipUnless(CONF.compute_feature_enabled.shelve,
                           'Shelve is not available.')
     def test_detach_volume_shelved_or_offload_server(self):
-        # Create server, count number of volumes on it, shelve
+        # Count number of volumes on instance, shelve
         # server and attach pre-created volume to shelved server
         server = self._create_server()
+        volume = self.create_volume()
         num_vol = self._count_volumes(server)
         self._shelve_server(server)
-        volume = self._create_and_attach_volume(server)
-
+        self._attach_volume(server['id'], volume['id'], device=self.device)
         # Detach the volume
-        self._detach(server['id'], volume['id'])
-        self.attachment = None
+        self._detach_volume(server['id'], volume['id'])
 
         # Unshelve the instance and check that we have the expected number of
         # volume(s)
